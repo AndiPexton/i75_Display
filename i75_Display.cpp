@@ -14,6 +14,7 @@ using namespace pimoroni;
 const uint8_t WIDTH = 64;
 const uint8_t HEIGHT = 64;
 
+static const int blinkInterval = 300;
 Hub75 hub75(WIDTH, HEIGHT, nullptr, PANEL_GENERIC, true);
 
 void __isr dma_complete() {
@@ -41,6 +42,14 @@ void checkBlinkTimeout();
 void renderTextChar(int row, int column);
 
 void renderTextChars();
+
+void ResetTextScreen(const Pixel &colour);
+
+void processEscapeCommand(int key);
+
+void processBackSpace();
+
+void processTextToDisplay(int key);
 
 void scrollUpIfNeeded(){
     if (cursorY > 7)
@@ -118,7 +127,6 @@ void checkBlinkTimeout() {
     if ( !time_reached(blink)) return;
 
     on = !on;
-    int blinkInterval = 300;
     blink = make_timeout_time_ms(blinkInterval);
 }
 
@@ -210,47 +218,9 @@ void processKey(int key)
 {
     if(escape)
     {
-        escape=false;
-
-        if(key == 0) {
-
-            cursorX = 0;
-            cursorY = 0;
-            currentColour = Pixel(127, 127, 127);
-
-            for (auto row = 0; row < 8; row++) {
-                for (auto column = 0; column < 10; column++) {
-                    screenText[column][row] = 0;
-                    screenColour[column][row] = Pixel(0, 0, 0);
-                }
-            }
-            return;
-        }
-
-        if(key == 1) {
-            cursorX = 0;
-            cursorY = 0;
-            currentColour = Pixel(0, 255, 0);
-            for (auto row = 0; row < 8; row++) {
-                for (auto column = 0; column < 10; column++) {
-                    screenText[column][row] = 0;
-                    screenColour[column][row] = Pixel(0, 0, 0);
-                }
-            }
-            return;
-        }
-
-        if((key & 128) == 128 )
-        {
-            currentColour = To64Colour(key);
-            return;
-        }
-
-        if((key & 64) == 64 )
-        {
-            graphics=true;
-            return;
-        }
+        escape = false;
+        processEscapeCommand(key);
+        return;
     }
 
     if(key == 27) {
@@ -258,35 +228,71 @@ void processKey(int key)
         return;
     }
 
-    if (key > 0) {
-        if (key > 255)
-        {
-            printf("over 255 :%i ", key);
-            return;
-        }
+    if (key > 0 && key <=255) {
+        
+        processTextToDisplay(key);
+        return;
+        
+        
+    }
+}
 
-        if (key == 13) {
-            newLine();
-            return;
-        }
+void processTextToDisplay(int key) {
+    if (key == 13) {
+        newLine();
+        return;
+    }
 
-        if (key == 127 ) {
-            moveLeft();
-            writeChar(' ');
-            moveLeft();
-            printf("back space :%i ", key);
-            return;
-        }
+    if (key == 127 ) {
+        processBackSpace();
+        return;
+    }
 
-        if(key >=32) {
-            writeChar(key);
-            printf("normal :%i ", key);
-            return;
-        }
-        else
-        {
-            printf("other :%i ", key);
-            return;
+    if(key >=32) {
+        writeChar(key);
+        return;
+    }
+}
+
+void processBackSpace() {
+    moveLeft();
+    writeChar(' ');
+    moveLeft();
+}
+
+void processEscapeCommand(int key) {
+    if(key == 0) {
+        ResetTextScreen(Pixel(127, 127, 127));
+        return;
+    }
+
+    if(key == 1) {
+        ResetTextScreen(Pixel(0, 255, 0));
+        return;
+    }
+
+    if((key & 128) == 128 )
+    {
+        currentColour = To64Colour(key);
+        return;
+    }
+
+    if((key & 64) == 64 )
+    {
+        graphics=true;
+        return;
+    }
+}
+
+void ResetTextScreen(const Pixel &colour) {
+    cursorX = 0;
+    cursorY = 0;
+    currentColour = colour;
+
+    for (auto row = 0; row < 8; row++) {
+        for (auto column = 0; column < 10; column++) {
+            screenText[column][row] = 0;
+            screenColour[column][row] = Pixel(0, 0, 0);
         }
     }
 }
