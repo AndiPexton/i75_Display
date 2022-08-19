@@ -38,6 +38,7 @@ target_link_libraries(${NAME}
         )
 
 # create map/bin/hex file etc.
+pico_enable_stdio_usb(${NAME} 1)
 pico_add_extra_outputs(${NAME})
 
 # Set up files for the release packages

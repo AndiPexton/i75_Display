@@ -15,6 +15,12 @@ const uint8_t WIDTH = 64;
 const uint8_t HEIGHT = 64;
 
 static const int blinkInterval = 300;
+static const int SET_X = 0x40;
+static const int SET_Y = 0x80;
+static const int CONTROL = 0xC0;
+static const int COMMAND_MASK = 0xC0;
+static const int VALUE_MASK = 0x3F;
+static const int PIXEL_WRITE = 0x00;
 Hub75 hub75(WIDTH, HEIGHT, nullptr, PANEL_GENERIC, true);
 
 void __isr dma_complete() {
@@ -50,6 +56,12 @@ void processEscapeCommand(int key);
 void processBackSpace();
 
 void processTextToDisplay(int key);
+
+void hardReset();
+
+void resetGraphics();
+
+void writePixelAndAdvance(const Pixel &pixel);
 
 void scrollUpIfNeeded(){
     if (cursorY > 7)
@@ -132,13 +144,9 @@ void checkBlinkTimeout() {
 
 void renderScreenGraphics()
 {
-    for(auto x=0; x < WIDTH; x++)
-    {
-        for(auto y=0; y < HEIGHT; y++)
-        {
-            hub75.set_color(x,y, screenGraphics[x][y]);
-        }
-    }
+    for (auto x = 0; x < WIDTH; x++)
+        for (auto y = 0; y < HEIGHT; y++)
+            hub75.set_color(x, y, screenGraphics[x][y]);;
 }
 
 void moveUp()
@@ -201,11 +209,11 @@ int BitsToColourValue(int bits) {
     }
 }
 
-Pixel To64Colour(int input)
+Pixel To64Colour(int value)
 {
-    int redBits = input & 0b00000011;
-    int greenBits = (input & 0b00001100) >> 2;
-    int blueBits = (input & 0b00110000) >> 4;
+    int redBits = value & 0b00000011;
+    int greenBits = (value & 0b00001100) >> 2;
+    int blueBits = (value & 0b00110000) >> 4;
 
     int r = BitsToColourValue(redBits);
     int g = BitsToColourValue(greenBits);
@@ -218,7 +226,6 @@ void processKey(int key)
 {
     if(escape)
     {
-        escape = false;
         processEscapeCommand(key);
         return;
     }
@@ -228,16 +235,15 @@ void processKey(int key)
         return;
     }
 
-    if (key > 0 && key <=255) {
-        
+    if (key > 0 ) {
         processTextToDisplay(key);
         return;
-        
-        
     }
 }
 
 void processTextToDisplay(int key) {
+    if(key>=255) hardReset();
+
     if (key == 13) {
         newLine();
         return;
@@ -248,7 +254,7 @@ void processTextToDisplay(int key) {
         return;
     }
 
-    if(key >=32) {
+    if(key >=32 && key <255) {
         writeChar(key);
         return;
     }
@@ -261,12 +267,17 @@ void processBackSpace() {
 }
 
 void processEscapeCommand(int key) {
-    if(key == 0) {
+    if(key > 0)
+        escape = false;
+
+    if(key == 2) {
+        graphics = false;
         ResetTextScreen(Pixel(127, 127, 127));
         return;
     }
 
     if(key == 1) {
+        graphics=false;
         ResetTextScreen(Pixel(0, 255, 0));
         return;
     }
@@ -297,34 +308,61 @@ void ResetTextScreen(const Pixel &colour) {
     }
 }
 
-void processGraphics(int value)
+void processGraphics(int input)
 {
-    if ((value & 192) == 192) {
-        graphics = false;
+    if(input <= 0) return;
+    if(input >= 255) {
+        hardReset();
         return;
     }
 
-    if ((value & 128) == 128)
-    {
-        pointX = value & 0b00111111;
-        return;
-    }
+    auto command = (input & COMMAND_MASK);
+    auto value = (input & VALUE_MASK);
 
-    if ((value & 64) == 64)
-    {
-        pointY = value & 0b00111111;
-        return;
+    switch (command) {
+        case CONTROL:
+            if (value == 0)
+                graphics = false;
+            else
+                writePixelAndAdvance(To64Colour(0));
+            break;
+        case SET_Y:
+            pointY = value;
+            break;
+        case SET_X:
+            pointX = value;
+            break;
+        case PIXEL_WRITE:
+            writePixelAndAdvance(To64Colour(value));
     }
+}
 
-    screenGraphics[pointX][pointY] = To64Colour(value);
-    pointX ++;
+void writePixelAndAdvance(const Pixel &pixel) {
+    screenGraphics[pointX][pointY] = pixel;
+    pointX++;
 
     if (pointX > 63) {
         pointX = 0;
-        pointY ++;
+        pointY++;
     }
 
-    if (pointY >63) pointY = 0;
+    if (pointY > 63) pointY = 0;
+}
+
+void hardReset() {
+    graphics = false;
+    ResetTextScreen(Pixel(127, 127, 127));
+    resetGraphics();
+}
+
+void resetGraphics() {
+    pointX = 0;
+    pointY = 0;
+    for (auto row = 0; row < 64; row++) {
+        for (auto column = 0; column < 64; column++) {
+            screenGraphics [column][row] = Pixel(0,0,0);
+        }
+    }
 }
 
 void processInput(int input)
